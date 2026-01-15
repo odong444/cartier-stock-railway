@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, jsonify
 import threading
 import time
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import json
 import os
@@ -25,16 +26,15 @@ DATA_FILE = "data.json"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7581538889:AAHqA9oitAEARZj9v8HaTvh9xKRRiJNY67U")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002901540928")
 
-# HTTP 세션 설정
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
-    'Cache-Control': 'no-cache',
-})
+# HTTP 세션 설정 (cloudscraper로 봇 탐지 우회)
+import cloudscraper
+session = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    }
+)
 
 def add_log(msg):
     """로그 추가"""
