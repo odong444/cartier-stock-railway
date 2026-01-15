@@ -1,12 +1,13 @@
 # app.py - Railway용 까르띠에 재고 확인 웹 버전
 from flask import Flask, render_template, request, jsonify
-from playwright.sync_api import sync_playwright
 import threading
 import time
 import requests
+from bs4 import BeautifulSoup
 import json
 import os
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
@@ -23,6 +24,17 @@ DATA_FILE = "data.json"
 # 텔레그램 설정
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7581538889:AAHqA9oitAEARZj9v8HaTvh9xKRRiJNY67U")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002901540928")
+
+# HTTP 세션 설정
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Cache-Control': 'no-cache',
+})
 
 def add_log(msg):
     """로그 추가"""
@@ -78,49 +90,42 @@ def send_telegram(message):
         add_log(f"텔레그램 오류: {e}")
 
 def check_stock(url):
-    """재고 확인 (Playwright 사용)"""
+    """재고 확인 (requests + BeautifulSoup)"""
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu'
-                ]
-            )
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport={'width': 1920, 'height': 1080}
-            )
-            page = context.new_page()
-            
-            page.goto(url, timeout=30000, wait_until='domcontentloaded')
-            time.sleep(3)  # 페이지 완전 로드 대기
-            
-            # 제목 추출
-            title = ""
-            try:
-                title_elem = page.query_selector('h1.pdp-header__title')
-                if title_elem:
-                    title = title_elem.inner_text().strip()
-            except:
-                pass
-            
-            # 재고 확인
-            page_content = page.content()
-            
-            browser.close()
-            
-            # 재고 상태 판별
-            if '상담원 연결' in page_content or 'contact-customer-care' in page_content:
-                return "품절", title
-            elif '쇼핑백에 추가하기' in page_content or 'add-to-cart' in page_content.lower():
-                return "재고있음", title
-            else:
-                return "확인불가", title
-                
+        response = session.get(url, timeout=30)
+        response.raise_for_status()
+        
+        html = response.text
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # 제목 추출
+        title = ""
+        title_elem = soup.select_one('h1.pdp-header__title')
+        if title_elem:
+            title = title_elem.get_text(strip=True)
+        
+        # 재고 상태 판별
+        # 방법 1: 버튼 텍스트 확인
+        if '상담원 연결' in html or 'contact-customer-care' in html:
+            return "품절", title
+        
+        # 방법 2: 쇼핑백 추가 버튼 확인
+        add_btn = soup.select_one('button.add-to-cart[data-product-component="add-button"]')
+        if add_btn and '쇼핑백에 추가하기' in add_btn.get_text():
+            return "재고있음", title
+        
+        # 방법 3: HTML 텍스트로 확인
+        if '쇼핑백에 추가하기' in html:
+            return "재고있음", title
+        
+        return "확인불가", title
+        
+    except requests.exceptions.Timeout:
+        add_log(f"타임아웃: {url[:40]}")
+        return "오류", ""
+    except requests.exceptions.RequestException as e:
+        add_log(f"요청 오류: {e}")
+        return "오류", ""
     except Exception as e:
         add_log(f"재고 확인 오류: {e}")
         return "오류", ""
