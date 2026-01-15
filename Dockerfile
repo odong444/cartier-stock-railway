@@ -1,10 +1,4 @@
-FROM python:3.11-slim
-
-# 필수 패키지 설치
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
 # 작업 디렉토리
 WORKDIR /app
@@ -12,10 +6,6 @@ WORKDIR /app
 # 의존성 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Playwright 브라우저 설치
-RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # 앱 복사
 COPY . .
